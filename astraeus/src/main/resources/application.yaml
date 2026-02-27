@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: iDRAC microservice
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.web.client.RestClientAutoConfiguration
+      - org.springframework.cloud.vault.config.VaultAutoConfiguration
+      - org.springframework.cloud.vault.config.VaultReactiveAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/astraeus
+    username: astraeus_user
+    password: astraeus_pass
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+  flyway:
+    enabled: true
+  cloud:
+    vault:
+      uri: http://localhost:8200
+      scheme: http
+      token: astraeus-root-token
+      kv:
+        enabled: true
+
+server:
+  port: 8080
