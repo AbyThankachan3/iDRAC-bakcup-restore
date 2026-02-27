@@ -17,9 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class RedfishClientIntegrationTest {
 
-    private static final String HOST = "10.20.21.73";
-    private static final String USERNAME = "admin";
-    private static final String PASSWORD = "calvin@123";
+    private static final String HOST = "hostip";
+    private static final String USERNAME = "root";
+    private static final String PASSWORD = "calvin";
 
     private static final long TIMEOUT = 300000;
 
