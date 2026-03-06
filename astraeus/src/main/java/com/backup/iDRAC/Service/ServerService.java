@@ -1,26 +1,36 @@
 package com.backup.iDRAC.Service;
 
-import com.backup.iDRAC.Dto.RegisterServerRequest;
-import com.backup.iDRAC.Dto.RegisterServerResponse;
+import com.backup.iDRAC.Dto.*;
+import com.backup.iDRAC.Entity.BulkRegisterJob;
 import com.backup.iDRAC.Entity.IdracServer;
 import com.backup.iDRAC.Exception.ServerConnectionException;
 import com.backup.iDRAC.Exception.ServerNotFoundException;
+import com.backup.iDRAC.Repostiory.BulkRegisterFailureRepository;
+import com.backup.iDRAC.Repostiory.BulkRegisterJobRepository;
 import com.backup.iDRAC.Repostiory.IdracServerRepository;
-import com.idrac.api.RedfishClient;
-import com.idrac.client.RedfishClientBuilder;
-import com.idrac.config.RedfishConnection;
+import com.idrac.backup.api.RedfishClient;
+import com.idrac.backup.client.RedfishClientBuilder;
+import com.idrac.backup.config.RedfishConnection;
 import jakarta.transaction.Transactional;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
+import org.springframework.web.multipart.MultipartFile;
+import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 @Service
-@RequiredArgsConstructor
+
 public class ServerService {
-    private final IdracServerRepository idracServerRepository;
-    private final VaultService vaultService;
+    @Autowired
+    private IdracServerRepository idracServerRepository;
+    @Autowired
+    private VaultService vaultService;
+    @Autowired
+    private BulkRegisterJobRepository jobRepository;
+    @Autowired
+    private BulkRegisterAsyncService bulkRegisterAsyncService;
+    @Autowired
+    private BulkRegisterFailureRepository failureRepository;
 
     @Transactional
     public IdracServer registerServer(RegisterServerRequest request){
@@ -61,12 +71,46 @@ public class ServerService {
                 .orElseThrow(() ->
                         new ServerNotFoundException("ID: " + host)
                 );
-
         // Delete credentials from Vault first
         vaultService.deleteCredentials(server.getVaultPath());
-
         // Then delete from DB
         idracServerRepository.delete(server);
+    }
+
+    public Long startBulkRegister(MultipartFile file) {
+
+        BulkRegisterJob job = BulkRegisterJob.builder()
+                .startedAt(Instant.now())
+                .status("RUNNING")
+                .build();
+
+        job = jobRepository.save(job);
+        bulkRegisterAsyncService.processCsvAsync(job, file);
+
+        return job.getId();
+    }
+
+    public BulkRegisterJobResponse getBulkRegisterJob(Long jobId) {
+
+        BulkRegisterJob job = jobRepository.findById(jobId).orElseThrow();
+
+        List<BulkRegisterFailure> failures = failureRepository.findByJobId(jobId)
+                        .stream()
+                        .map(f -> new BulkRegisterFailure(
+                                f.getHost(),
+                                f.getError()))
+                        .toList();
+
+        return BulkRegisterJobResponse.builder()
+                .jobId(job.getId())
+                .status(job.getStatus())
+                .total(job.getTotal())
+                .successCount(job.getSuccessCount())
+                .failureCount(job.getFailureCount())
+                .startedAt(job.getStartedAt())
+                .finishedAt(job.getFinishedAt())
+                .failures(failures)
+                .build();
     }
 
 }

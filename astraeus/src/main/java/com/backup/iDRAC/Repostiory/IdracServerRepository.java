@@ -11,5 +11,4 @@ public interface IdracServerRepository extends JpaRepository<IdracServer, Long> 
     boolean existsByHost(String host);
     List<IdracServer> findByModel(String model);
     boolean existsByModel(String model);
-    long countByModel(String model);
 }

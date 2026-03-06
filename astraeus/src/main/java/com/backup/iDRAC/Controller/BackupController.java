@@ -23,19 +23,33 @@ public class BackupController {
     @Autowired
     private BackupService backupService;
 
-    @Operation(summary = "Trigger backup for all servers",
-            description = "Creates a backup job for all registered iDRAC servers.")
+    @Operation(
+            summary = "Trigger backup for all servers",
+            description = "Creates a backup job for all registered iDRAC servers."
+    )
     @PostMapping
-    public BackupResponse backupAll(){
-        return backupService.backupAllServers();
+    public BackupStartResponse backupAll(){
+        Long jobId = backupService.startBackupAllServers();
+        return BackupStartResponse.builder()
+                .jobId(jobId)
+                .status("STARTED")
+                .build();
     }
 
-    @Operation(summary = "Trigger backup for a single host",
-            description = "Creates a backup job for a specific server.")
+
+    @Operation(
+            summary = "Trigger backup for a single host",
+            description = "Creates a backup job for a specific server."
+    )
     @PostMapping("/{host}")
-    public HostBackupResponse backupAll(@PathVariable String host){
-        return backupService.backupSingleHost(host);
+    public BackupStartResponse backup(@PathVariable String host){
+        Long jobId = backupService.startBackupSingleHost(host);
+        return BackupStartResponse.builder()
+                .jobId(jobId)
+                .status("STARTED")
+                .build();
     }
+
 
     @Operation(summary = "Get all the created jobs",
             description = "Get all the created jobs.")
@@ -78,7 +92,7 @@ public class BackupController {
             description = "Downloads the backup file associated with a successful backup log."
     )
     @Parameter(description = "Backup host log ID", example = "5")
-    @GetMapping("/files/{logId}")
+    @GetMapping("/download/{logId}")
     public ResponseEntity<Resource> downloadBackup(@PathVariable Long logId) {
         return backupService.downloadBackupFile(logId);
     }

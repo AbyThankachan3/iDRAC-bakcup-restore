@@ -1,13 +1,11 @@
 package com.backup.iDRAC.Exception;
 
-import jakarta.persistence.criteria.CriteriaBuilder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.backup.iDRAC.Dto.ErrorResponse;
 import java.time.Instant;
-import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -46,30 +44,38 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HostNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleHostNotFound(HostNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.builder()
-                        .error("Host Not Found")
-                        .message(ex.getMessage())
-                        .timestamp(Instant.now().toString())
-                        .build());
+                .body(ErrorResponse.builder().error("Host Not Found").message(ex.getMessage()).timestamp(Instant.now().toString()).build());
     }
 
     @ExceptionHandler(ModelNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleModelNotFound(ModelNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.builder()
-                        .error("Model Not Found")
-                        .message(ex.getMessage())
-                        .timestamp(Instant.now().toString())
-                        .build());
+                .body(ErrorResponse.builder().error("Model Not Found").message(ex.getMessage()).timestamp(Instant.now().toString()).build());
     }
 
     @ExceptionHandler(FailedBackupException.class)
     public ResponseEntity<ErrorResponse> handleFailedBackup(FailedBackupException ex){
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                ErrorResponse.builder()
-                        .error("Backup failed")
-                        .message(ex.getMessage())
-                        .timestamp(Instant.now().toString())
-                        .build());
+                ErrorResponse.builder().error("Backup failed").message(ex.getMessage()).timestamp(Instant.now().toString()).build());
     }
+
+    @ExceptionHandler(FileReadException.class)
+    public ResponseEntity<ErrorResponse> handleFileRead(FileReadException ex){
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.builder().error("File Error").message(ex.getMessage()).timestamp(Instant.now().toString()).build());
+    }
+
+    @ExceptionHandler(RestoreFailedException.class)
+    public ResponseEntity<ErrorResponse> handleRestoreFailed(RestoreFailedException ex){
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                ErrorResponse.builder().error("Restore Failed").message(ex.getMessage()).timestamp(Instant.now().toString()).build()
+        );
+    }
+
+    @ExceptionHandler(RestoreIdNotFound.class)
+    public ResponseEntity<ErrorResponse> handleRestoreIdNotFound(RestoreIdNotFound ex){
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                ErrorResponse.builder().error("Not Found").message(ex.getMessage()).timestamp(Instant.now().toString()).build()
+        );
+    }
+
 }

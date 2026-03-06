@@ -1,6 +1,0 @@
-CREATE TABLE idrac_servers (
-    id BIGSERIAL PRIMARY KEY,
-    host VARCHAR(255) NOT NULL UNIQUE,
-    model VARCHAR(255) NOT NULL,
-    vault_path VARCHAR(255) NOT NULL
-);

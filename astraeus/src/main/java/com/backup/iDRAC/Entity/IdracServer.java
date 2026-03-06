@@ -15,13 +15,10 @@ public class IdracServer {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
     @Column(nullable = false)
     private String host;
-
     @Column(nullable = false)
     private String model;
-
     @Column(nullable = false)
     private String vaultPath;
 

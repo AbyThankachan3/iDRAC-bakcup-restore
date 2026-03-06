@@ -33,3 +33,4 @@ build/
 .vscode/
 
 astraeus/astraeus-backups
+server-files.csv

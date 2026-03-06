@@ -8,13 +8,10 @@ import com.backup.iDRAC.Exception.ModelNotFoundException;
 import com.backup.iDRAC.Repostiory.BackupHostLogRepository;
 import com.backup.iDRAC.Repostiory.BackupJobRepository;
 import com.backup.iDRAC.Repostiory.IdracServerRepository;
-import com.idrac.api.RedfishClient;
-import com.idrac.client.RedfishClientBuilder;
-import com.idrac.config.RedfishConnection;
-import com.idrac.model.ExportFormat;
-import com.idrac.model.ExportTarget;
-import com.idrac.model.ExportUse;
-import com.idrac.model.IncludeInExport;
+import com.idrac.backup.api.RedfishClient;
+import com.idrac.backup.client.RedfishClientBuilder;
+import com.idrac.backup.config.RedfishConnection;
+import com.idrac.backup.model.*;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
@@ -22,6 +19,7 @@ import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.net.MalformedURLException;
@@ -34,6 +32,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -46,153 +45,45 @@ public class BackupService {
     @Autowired
     private BackupHostLogRepository backupHostLogRepository;
     @Autowired
-    private VaultService vaultService;
+    private BackupAsyncService backupAsyncService;
 
     @Transactional
-    public BackupResponse backupAllServers() {
+    public Long startBackupAllServers() {
 
         List<IdracServer> servers = idracServerRepository.findAll();
+
         BackupJob job = BackupJob.builder()
                 .startedAt(Instant.now())
                 .totalServers(servers.size())
                 .status(BackupJobStatus.RUNNING)
                 .build();
+
         job = backupJobRepository.save(job);
 
-        int success = 0;
-        int failure = 0;
+        backupAsyncService.startBackupAsync(job, servers);
 
-        for (IdracServer server : servers) {
-            long start = System.currentTimeMillis();
-            try {
-                String filePath = backupSingleServer(server);
-                backupHostLogRepository.save(
-                        BackupHostLog.builder()
-                                .backupJob(job)
-                                .host(server.getHost())
-                                .status(BackupHostStatus.SUCCESS)
-                                .filePath(filePath)
-                                .durationMillis(System.currentTimeMillis() - start)
-                                .createdAt(Instant.now())
-                                .build()
-                );
-                success++;
-
-            } catch (Exception e) {
-                backupHostLogRepository.save(
-                        BackupHostLog.builder()
-                                .backupJob(job)
-                                .createdAt(Instant.now())
-                                .host(server.getHost())
-                                .status(BackupHostStatus.FAILED)
-                                .errorMessage(e.getMessage())
-                                .durationMillis(System.currentTimeMillis() - start)
-                                .createdAt(Instant.now())
-                                .build()
-                );
-                failure++;
-            }
-        }
-
-        job.setFinishedAt(Instant.now());
-        job.setSuccessCount(success);
-        job.setFailureCount(failure);
-        job.setStatus(failure > 0 ? BackupJobStatus.FAILED : BackupJobStatus.COMPLETED);
-        backupJobRepository.save(job);
-
-        return BackupResponse.builder()
-                .jobId(job.getId())
-                .totalServers(job.getTotalServers())
-                .successCount(success)
-                .failureCount(failure)
-                .build();
+        return job.getId();
     }
 
-    public HostBackupResponse backupSingleHost(String host) {
+    public Long startBackupSingleHost(String host) {
 
-        IdracServer server = idracServerRepository.findByHost(host).orElseThrow(() -> new HostNotFoundException(host));
+        IdracServer server = idracServerRepository
+                .findByHost(host)
+                .orElseThrow(() -> new HostNotFoundException(host));
+
         BackupJob job = BackupJob.builder()
                 .startedAt(Instant.now())
                 .totalServers(1)
                 .status(BackupJobStatus.RUNNING)
                 .build();
+
         job = backupJobRepository.save(job);
-        int success = 0;
-        int failure = 0;
-        long start = System.currentTimeMillis();
-        String filePath = null;
-        long duration;
-        BackupHostLog response;
-        try {
-            filePath = backupSingleServer(server);
-            duration = System.currentTimeMillis() - start;
-            response = backupHostLogRepository.save(
-                    BackupHostLog.builder()
-                            .host(host)
-                            .backupJob(job)
-                            .status(BackupHostStatus.SUCCESS)
-                            .filePath(filePath)
-                            .durationMillis(duration)
-                            .createdAt(Instant.now())
-                            .build()
-            );
-            success++;
 
-        } catch (Exception ex) {
+        backupAsyncService.startBackupAsync(job, List.of(server));
 
-            duration = System.currentTimeMillis() - start;
-            response = backupHostLogRepository.save(
-                    BackupHostLog.builder()
-                            .host(host)
-                            .backupJob(job)
-                            .status(BackupHostStatus.FAILED)
-                            .filePath(null)
-                            .durationMillis(duration)
-                            .createdAt(Instant.now())
-                            .build()
-            );
-            failure++;
-        }
-        job.setFinishedAt(Instant.now());
-        job.setSuccessCount(success);
-        job.setFailureCount(failure);
-        job.setStatus(failure > 0 ? BackupJobStatus.FAILED : BackupJobStatus.COMPLETED);
-        backupJobRepository.save(job);
-        return HostBackupResponse.builder()
-                .logId(response.getId())
-                .host(host)
-                .fileName(extractFileName(response.getFilePath()))
-                .durationMillis(duration)
-                .createdAt(Instant.now())
-                .build();
+        return job.getId();
     }
 
-    private String backupSingleServer(IdracServer server) throws Exception {
-
-        Credentials creds = vaultService.getCredentials(server.getVaultPath());
-        RedfishConnection connection = RedfishConnection.builder()
-                .host(server.getHost())
-                .username(creds.getUsername())
-                .password(creds.getPassword())
-                .build();
-        RedfishClient client = RedfishClientBuilder.build(connection);
-        String jobId = client.triggerExport(ExportTarget.ALL, ExportFormat.XML, ExportUse.CLONE, IncludeInExport.INCLUDE_READ_ONLY, IncludeInExport.INCLUDE_PASSWORD_HASH_VALUES);
-        client.pollJob(jobId, 300000);
-        String scp = client.fetchScp(jobId, ExportFormat.XML);
-        return saveBackupToDisk(server.getHost(), scp);
-    }
-
-    private String saveBackupToDisk(String host, String content) throws Exception {
-
-        String timestamp = LocalDateTime.now()
-                .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-
-        Path dir = Path.of("astraeus-backups", host);
-        Files.createDirectories(dir);
-        Path file = dir.resolve("idrac_" + timestamp + ".xml");
-        Files.writeString(file, content, StandardCharsets.UTF_8);
-        return file.toAbsolutePath().toString();
-    }
 
     public List<BackupJobSummaryResponse> getAllJobs() {
 
@@ -218,10 +109,11 @@ public class BackupService {
                 .map(log -> BackupHostLogResponse.builder()
                                 .logId(log.getId())
                                 .host(log.getHost())
-                                .status(log.getStatus().name())
+                                .status(log.getStatus())
                                 .fileName(extractFileName(log.getFilePath()))
                                 .errorMessage(log.getErrorMessage())
                                 .durationMillis(log.getDurationMillis())
+                                .percent(log.getPercent())
                                 .createdAt(log.getCreatedAt())
                                 .build())
                         .toList();
@@ -248,13 +140,13 @@ public class BackupService {
             if (from.isAfter(to)) {
                 throw new IllegalArgumentException("From date must be before To date");
             }
-            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBetween(host, BackupHostStatus.SUCCESS, from, to);
+            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBetween(host, "COMPLETED", from, to);
         } else if (from != null) {
-            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtAfter(host, BackupHostStatus.SUCCESS, from);
+            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtAfter(host, "COMPLETED", from);
         } else if (to != null) {
-            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBefore(host, BackupHostStatus.SUCCESS, to);
+            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBefore(host, "COMPLETED", to);
         } else {
-            logs = backupHostLogRepository.findByHostAndStatus(host, BackupHostStatus.SUCCESS);
+            logs = backupHostLogRepository.findByHostAndStatus(host, "COMPLETED");
         }
         if (logs.isEmpty()) {
             return HostSuccessBackupResponse.builder().host(host).successCount(0).backups(List.of()).build();
@@ -280,7 +172,7 @@ public class BackupService {
             throw new HostNotFoundException(host);
         }
 
-        Optional<BackupHostLog> logOptional = backupHostLogRepository.findTopByHostAndStatusOrderByIdDesc(host, BackupHostStatus.SUCCESS);
+        Optional<BackupHostLog> logOptional = backupHostLogRepository.findTopByHostAndStatusOrderByIdDesc(host, "COMPLETED");
 
         if (logOptional.isEmpty()) {
             return HostBackupResponse.builder().host(host).fileName(null).durationMillis(null).createdAt(null).build();
@@ -304,7 +196,7 @@ public class BackupService {
         }
         List<IdracServer> servers = idracServerRepository.findByModel(model);
         List<String> hosts = servers.stream().map(IdracServer::getHost).toList();
-        List<BackupHostLog> logs = backupHostLogRepository.findByHostInAndStatus(hosts, BackupHostStatus.SUCCESS);
+        List<BackupHostLog> logs = backupHostLogRepository.findByHostInAndStatus(hosts, "COMPLETED");
         if (logs.isEmpty()) {
             return ModelSuccessBackupResponse.empty(model, servers.size());
         }
@@ -322,7 +214,7 @@ public class BackupService {
                 .findById(logId)
                 .orElseThrow(() -> new RuntimeException("Backup log not found"));
 
-        if (log.getStatus() != BackupHostStatus.SUCCESS) {
+        if (!log.getStatus().equalsIgnoreCase("COMPLETED")) {
             throw new RuntimeException("Backup not successful. File not available.");
         }
 
