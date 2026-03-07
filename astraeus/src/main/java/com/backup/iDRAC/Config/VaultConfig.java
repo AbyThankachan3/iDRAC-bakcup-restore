@@ -10,14 +10,20 @@ import org.springframework.vault.authentication.TokenAuthentication;
 import org.springframework.vault.client.VaultEndpoint;
 import org.springframework.vault.config.AbstractVaultConfiguration;
 
+import java.net.URI;
+
 @Configuration
 public class VaultConfig extends AbstractVaultConfiguration {
 
     @Value("${spring.cloud.vault.token}")
     private String vaultToken;
+
+    @Value("${spring.cloud.vault.uri}")
+    private String vaultUri;
+
     @Override
     public VaultEndpoint vaultEndpoint() {
-        VaultEndpoint endpoint = VaultEndpoint.create("localhost", 8200);
+        VaultEndpoint endpoint = VaultEndpoint.from(URI.create(vaultUri));
         endpoint.setScheme("http");
         return endpoint;
     }

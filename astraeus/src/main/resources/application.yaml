@@ -7,9 +7,9 @@ spring:
       - org.springframework.cloud.vault.config.VaultAutoConfiguration
       - org.springframework.cloud.vault.config.VaultReactiveAutoConfiguration
   datasource:
-    url: jdbc:postgresql://localhost:5432/astraeus
-    username: astraeus_user
-    password: astraeus_pass
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -18,9 +18,9 @@ spring:
     enabled: true
   cloud:
     vault:
-      uri: http://localhost:8200
+      uri: ${VAULT_URI}
       scheme: http
-      token: astraeus-root-token
+      token: ${VAULT_TOKEN}
       kv:
         enabled: true
 

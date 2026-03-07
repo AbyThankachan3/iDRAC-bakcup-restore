@@ -143,10 +143,10 @@ public class BackupAsyncService {
 
     private String saveBackupToDisk(String host, String content) throws Exception {
 
+        String baseDir = System.getenv().getOrDefault("BACKUP_DIR", "/data/idrac-backups/");
         String timestamp = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-
-        Path dir = Path.of("astraeus-backups", host);
+        Path dir = Path.of(baseDir, host);
         Files.createDirectories(dir);
         Path file = dir.resolve("idrac_" + timestamp + ".xml");
         Files.writeString(file, content, StandardCharsets.UTF_8);
