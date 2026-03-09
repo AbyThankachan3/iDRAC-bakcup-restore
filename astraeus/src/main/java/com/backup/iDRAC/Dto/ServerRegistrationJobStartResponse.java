@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @Builder
-public class BulkRegisterStartResponse {
+public class ServerRegistrationJobStartResponse {
 
     private Long jobId;
 

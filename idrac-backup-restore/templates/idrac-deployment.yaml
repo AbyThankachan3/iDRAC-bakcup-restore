@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idrac-service
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.idrac.replicas }}
+  selector:
+    matchLabels:
+      app: idrac-service
+  template:
+    metadata:
+      labels:
+        app: idrac-service
+    spec:
+      containers:
+        - name: idrac-service
+          image: {{ .Values.idrac.image.repository }}:{{ .Values.idrac.image.tag }}
+          imagePullPolicy: {{ .Values.idrac.image.pullPolicy | default "Always" }}
+          ports:
+              - containerPort: 8080
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+            - name: DB_URL
+              value: jdbc:postgresql://postgres:5432/$(POSTGRES_DB)
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: VAULT_URI
+              value: http://vault:8200
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-secret
+                  key: root-token
+            - name: BACKUP_DIR
+              value: {{ .Values.idrac.backupDir }}
+          volumeMounts:
+            - mountPath: {{ .Values.idrac.backupDir }}
+              name: backup-storage
+      volumes:
+        - name: backup-storage
+          persistentVolumeClaim:
+            claimName: backup-pvc

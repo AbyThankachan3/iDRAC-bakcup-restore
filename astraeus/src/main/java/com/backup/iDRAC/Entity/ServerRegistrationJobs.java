@@ -7,13 +7,13 @@ import java.time.Instant;
 import java.util.List;
 
 @Entity
-@Table(name = "bulk_register_jobs")
+@Table(name = "server_registration_jobs")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class BulkRegisterJob {
+public class ServerRegistrationJobs {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -25,7 +25,8 @@ public class BulkRegisterJob {
     private int failureCount;
     private String status; // RUNNING COMPLETED FAILED
     @OneToMany(mappedBy = "job", cascade = CascadeType.ALL)
-    private List<BulkRegisterFailureLog> failures;
-
+    private List<ServerRegFailureLogs> failures;
+    @OneToMany(mappedBy = "job", cascade = CascadeType.ALL)
+    private List<IdracServer> successfulServers;
 }
 

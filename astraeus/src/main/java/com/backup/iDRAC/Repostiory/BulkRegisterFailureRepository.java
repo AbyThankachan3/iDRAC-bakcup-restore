@@ -1,12 +1,12 @@
 package com.backup.iDRAC.Repostiory;
 
-import com.backup.iDRAC.Entity.BulkRegisterFailureLog;
+import com.backup.iDRAC.Entity.ServerRegFailureLogs;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
-public interface BulkRegisterFailureRepository extends JpaRepository<BulkRegisterFailureLog, Long> {
+public interface BulkRegisterFailureRepository extends JpaRepository<ServerRegFailureLogs, Long> {
 
-    List<BulkRegisterFailureLog> findByJobId(Long jobId);
+    List<ServerRegFailureLogs> findByJobId(Long jobId);
 
 }

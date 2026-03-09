@@ -1,14 +1,31 @@
 
+
+CREATE TABLE server_registration_jobs (
+      id BIGSERIAL PRIMARY KEY,
+      started_at TIMESTAMP,
+      finished_at TIMESTAMP,
+      total INTEGER,
+      success_count INTEGER,
+      failure_count INTEGER,
+      status VARCHAR(50)
+);
+
+CREATE INDEX idx_server_reg_jobs_status ON server_registration_jobs(status);
+
+
 -- Table: idrac_servers
 
 CREATE TABLE idrac_servers (
    id BIGSERIAL PRIMARY KEY,
    host VARCHAR(255) NOT NULL,
    model VARCHAR(255) NOT NULL,
-   vault_path VARCHAR(255) NOT NULL
+   vault_path VARCHAR(255) NOT NULL,
+   job_id BIGINT NOT NULL,
+   CONSTRAINT fk_idrac_servers_job FOREIGN KEY (job_id) REFERENCES server_registration_jobs(id) ON DELETE CASCADE
 );
 
 CREATE UNIQUE INDEX idx_idrac_servers_host ON idrac_servers(host);
+CREATE INDEX idx_idrac_servers_job ON idrac_servers(job_id);
 
 
 -- Table: backup_jobs
@@ -47,31 +64,16 @@ CREATE INDEX idx_backup_host_logs_host ON backup_host_logs(host);
 CREATE INDEX idx_backup_host_logs_status ON backup_host_logs(status);
 
 
--- Table: bulk_register_jobs
-CREATE TABLE bulk_register_jobs (
-    id BIGSERIAL PRIMARY KEY,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
-    total INTEGER,
-    success_count INTEGER,
-    failure_count INTEGER,
-    status VARCHAR(50)
+CREATE TABLE server_register_failures (
+      id BIGSERIAL PRIMARY KEY,
+      job_id BIGINT NOT NULL,
+      host VARCHAR(255),
+      error VARCHAR(2000),
+      CONSTRAINT fk_server_reg_failures_job FOREIGN KEY (job_id) REFERENCES server_registration_jobs(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_bulk_register_jobs_status ON bulk_register_jobs(status);
-
--- Table: bulk_register_failures
-CREATE TABLE bulk_register_failures (
-    id BIGSERIAL PRIMARY KEY,
-    job_id BIGINT NOT NULL,
-    host VARCHAR(255),
-    error VARCHAR(2000),
-
-    CONSTRAINT fk_bulk_register_failures_job FOREIGN KEY (job_id) REFERENCES bulk_register_jobs(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_bulk_register_failures_job ON bulk_register_failures(job_id);
-CREATE INDEX idx_bulk_register_failures_host ON bulk_register_failures(host);
+CREATE INDEX idx_server_reg_failures_job ON server_register_failures(job_id);
+CREATE INDEX idx_server_reg_failures_host ON server_register_failures(host);
 
 -- Table: restore_log
 CREATE TABLE restore_log (

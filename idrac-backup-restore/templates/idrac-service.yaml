@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: idrac-service
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: idrac-service
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30080
+  type: NodePort

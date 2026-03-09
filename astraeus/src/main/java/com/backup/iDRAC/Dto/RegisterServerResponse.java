@@ -14,4 +14,5 @@ public class RegisterServerResponse {
     private String host;
     @Schema(description = "Detected Server model", example = "PowerEdge R450")
     private String model;
+    private Long registrationJobId;
 }

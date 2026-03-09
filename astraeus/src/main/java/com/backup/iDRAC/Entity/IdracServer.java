@@ -21,5 +21,7 @@ public class IdracServer {
     private String model;
     @Column(nullable = false)
     private String vaultPath;
-
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "job_id", nullable = false)
+    private ServerRegistrationJobs job;
 }

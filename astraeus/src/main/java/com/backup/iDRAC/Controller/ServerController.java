@@ -2,13 +2,11 @@ package com.backup.iDRAC.Controller;
 
 
 import com.backup.iDRAC.Dto.*;
-import com.backup.iDRAC.Entity.BulkRegisterJob;
-import com.backup.iDRAC.Entity.IdracServer;
-import com.backup.iDRAC.Repostiory.BulkRegisterJobRepository;
 import com.backup.iDRAC.Service.ServerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,30 +21,27 @@ public class ServerController {
     @Autowired
     private ServerService serverService;
 
-    @Operation(
-            summary = "Register a new iDRAC server",
-            description = "Validates the server connectivity, stores credentials in Vault, and saves server metadata in the database."
-    )
     @PostMapping
-    public RegisterServerResponse registerServer(@RequestBody RegisterServerRequest serverDetails){
-        IdracServer server = serverService.registerServer(serverDetails);
-        return new RegisterServerResponse(server.getId(), server.getHost(), server.getModel());
+    public ResponseEntity<ServerRegistrationJobStartResponse> registerServer(@RequestBody RegisterServerRequest serverDetails) {
+        // Start the job and get the ID immediately
+        Long jobId = serverService.startSingleRegisterJob(serverDetails);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ServerRegistrationJobStartResponse.builder().jobId(jobId).status("STARTED").build());
     }
 
     @PostMapping("/file")
-    public BulkRegisterStartResponse registerBulk(@RequestParam MultipartFile file) {
+    public ServerRegistrationJobStartResponse registerBulk(@RequestParam MultipartFile file) {
 
         Long jobId = serverService.startBulkRegister(file);
 
-        return BulkRegisterStartResponse.builder()
+        return ServerRegistrationJobStartResponse.builder()
                 .jobId(jobId)
                 .status("STARTED")
                 .build();
     }
 
-    @GetMapping("/bulk/{jobId}")
-    public BulkRegisterJobResponse getJob(@PathVariable Long jobId){
-        return serverService.getBulkRegisterJob(jobId);
+    @GetMapping("/job/{jobId}")
+    public ServerRegistrationJobStatusResponse getJob(@PathVariable Long jobId){
+        return serverService.getServerRegisterJob(jobId);
     }
 
 

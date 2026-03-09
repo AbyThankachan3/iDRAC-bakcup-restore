@@ -1,8 +1,8 @@
 package com.backup.iDRAC.Service;
 
 import com.backup.iDRAC.Dto.RegisterServerRequest;
-import com.backup.iDRAC.Entity.BulkRegisterFailureLog;
-import com.backup.iDRAC.Entity.BulkRegisterJob;
+import com.backup.iDRAC.Entity.ServerRegFailureLogs;
+import com.backup.iDRAC.Entity.ServerRegistrationJobs;
 import com.backup.iDRAC.Entity.IdracServer;
 import com.backup.iDRAC.Exception.ServerConnectionException;
 import com.backup.iDRAC.Repostiory.BulkRegisterFailureRepository;
@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
-public class BulkRegisterAsyncService {
+public class ServerRegisterAsyncService {
 
     @Autowired
     private BulkRegisterJobRepository jobRepository;
@@ -36,9 +36,9 @@ public class BulkRegisterAsyncService {
     private IdracServerRepository idracServerRepository;
 
     @Async
-    public void processCsvAsync(BulkRegisterJob job, MultipartFile file) {
+    public void processCsvAsync(ServerRegistrationJobs job, MultipartFile file) {
 
-        List<BulkRegisterFailureLog> failures = new ArrayList<>();
+        List<ServerRegFailureLogs> failures = new ArrayList<>();
         int total = 0;
         int success = 0;
 
@@ -61,11 +61,11 @@ public class BulkRegisterAsyncService {
                 String password = parts[2].trim();
 
                 try {
-                    registerServer(new RegisterServerRequest(host, username, password));
+                    registerServer(new RegisterServerRequest(host, username, password), job);
                     success++;
                 } catch (Exception ex) {
                     failures.add(
-                            BulkRegisterFailureLog.builder()
+                            ServerRegFailureLogs.builder()
                                     .job(job)
                                     .host(host)
                                     .error(ex.getMessage())
@@ -91,8 +91,36 @@ public class BulkRegisterAsyncService {
         failureRepository.saveAll(failures);
     }
 
+    @Async
+    public void processSingleAsync(ServerRegistrationJobs job, RegisterServerRequest request) {
+        try {
+            IdracServer server = registerServer(request, job);
+            job.setSuccessCount(1);
+            job.setStatus("COMPLETED");
+
+            // IMPORTANT: If you added the job_id column to idrac_servers as discussed,
+            // you should link it here!
+            // server.setJobId(job.getId());
+            // idracServerRepository.save(server);
+
+        } catch (Exception ex) {
+            job.setFailureCount(1);
+            job.setStatus("FAILED");
+            ServerRegFailureLogs failure = ServerRegFailureLogs.builder()
+                    .job(job)
+                    .host(request.getHost())
+                    .error(ex.getMessage())
+                    .build();
+            failureRepository.save(failure);
+
+        } finally {
+            job.setFinishedAt(Instant.now());
+            jobRepository.save(job);
+        }
+    }
+
     @Transactional
-    public IdracServer registerServer(RegisterServerRequest request){
+    public IdracServer registerServer(RegisterServerRequest request, ServerRegistrationJobs job){
         //check connection
         RedfishConnection connection = RedfishConnection.builder().host(request.getHost()).username(request.getUsername()).password(request.getPassword()).build();
         try{
@@ -100,7 +128,7 @@ public class BulkRegisterAsyncService {
             String systemModel = client.getSystemModel();
             //save values to db and vault
             String vaultPath = vaultService.storeCredentials(request.getHost(), request.getUsername(), request.getPassword());
-            IdracServer server = IdracServer.builder().host(request.getHost()).model(systemModel).vaultPath(vaultPath).build();
+            IdracServer server = IdracServer.builder().host(request.getHost()).model(systemModel).vaultPath(vaultPath).job(job).build();
             idracServerRepository.save(server);
             return server;
         } catch (Exception e) {

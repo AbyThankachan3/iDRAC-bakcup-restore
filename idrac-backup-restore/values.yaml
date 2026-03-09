@@ -1,0 +1,22 @@
+namespace: astraeus
+
+idrac:
+  image:
+    repository: abythankachan/astraeus-idrac-service
+    tag: "1.0"
+    pullPolicy: "Always"
+  replicas: 1
+  backupDir: /data/iDRAC-backups
+  backup:
+    storage: 2Gi
+
+postgres:
+  image:
+    repository: postgres
+    tag: "16"
+  storage: 1Gi
+
+vault:
+  image:
+    repository: hashicorp/vault
+    tag: "1.16"

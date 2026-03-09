@@ -1,21 +1,18 @@
 package com.backup.iDRAC.Service;
 
 import com.backup.iDRAC.Dto.*;
-import com.backup.iDRAC.Entity.BulkRegisterJob;
+import com.backup.iDRAC.Entity.ServerRegistrationJobs;
 import com.backup.iDRAC.Entity.IdracServer;
-import com.backup.iDRAC.Exception.ServerConnectionException;
 import com.backup.iDRAC.Exception.ServerNotFoundException;
 import com.backup.iDRAC.Repostiory.BulkRegisterFailureRepository;
 import com.backup.iDRAC.Repostiory.BulkRegisterJobRepository;
 import com.backup.iDRAC.Repostiory.IdracServerRepository;
-import com.idrac.backup.api.RedfishClient;
-import com.idrac.backup.client.RedfishClientBuilder;
-import com.idrac.backup.config.RedfishConnection;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -28,31 +25,14 @@ public class ServerService {
     @Autowired
     private BulkRegisterJobRepository jobRepository;
     @Autowired
-    private BulkRegisterAsyncService bulkRegisterAsyncService;
+    private ServerRegisterAsyncService serverRegisterAsyncService;
     @Autowired
     private BulkRegisterFailureRepository failureRepository;
-
-    @Transactional
-    public IdracServer registerServer(RegisterServerRequest request){
-        //check connection
-        RedfishConnection connection = RedfishConnection.builder().host(request.getHost()).username(request.getUsername()).password(request.getPassword()).build();
-        try{
-            RedfishClient client = RedfishClientBuilder.build(connection);
-            String systemModel = client.getSystemModel();
-            //save values to db and vault
-            String vaultPath = vaultService.storeCredentials(request.getHost(), request.getUsername(), request.getPassword());
-            IdracServer server = IdracServer.builder().host(request.getHost()).model(systemModel).vaultPath(vaultPath).build();
-            idracServerRepository.save(server);
-            return server;
-        } catch (Exception e) {
-            throw new ServerConnectionException(request.getHost(), e.getMessage());
-        }
-    }
 
     public List<RegisterServerResponse> getAllServers(){
         return idracServerRepository.findAll().stream().map(
                 server -> new RegisterServerResponse(
-                        server.getId(), server.getHost(), server.getModel())).toList();
+                        server.getId(), server.getHost(), server.getModel(), server.getJob().getId())).toList();
     }
 
     public RegisterServerResponse getServerByHost(String host){
@@ -60,7 +40,7 @@ public class ServerService {
                 new RuntimeException("Server not found with host: " + host)
         );
 
-        return new RegisterServerResponse(server.getId(), server.getHost(), server.getModel());
+        return new RegisterServerResponse(server.getId(), server.getHost(), server.getModel(), server.getJob().getId());
     }
 
     @Transactional
@@ -79,29 +59,41 @@ public class ServerService {
 
     public Long startBulkRegister(MultipartFile file) {
 
-        BulkRegisterJob job = BulkRegisterJob.builder()
+        ServerRegistrationJobs job = ServerRegistrationJobs.builder()
                 .startedAt(Instant.now())
                 .status("RUNNING")
                 .build();
 
         job = jobRepository.save(job);
-        bulkRegisterAsyncService.processCsvAsync(job, file);
+        serverRegisterAsyncService.processCsvAsync(job, file);
 
         return job.getId();
     }
 
-    public BulkRegisterJobResponse getBulkRegisterJob(Long jobId) {
+    public ServerRegistrationJobStatusResponse getServerRegisterJob(Long jobId) {
 
-        BulkRegisterJob job = jobRepository.findById(jobId).orElseThrow();
+        ServerRegistrationJobs job = jobRepository.findById(jobId).orElseThrow();
 
-        List<BulkRegisterFailure> failures = failureRepository.findByJobId(jobId)
-                        .stream()
-                        .map(f -> new BulkRegisterFailure(
-                                f.getHost(),
-                                f.getError()))
-                        .toList();
+        List<ServerRegistrationFailures> failures = new ArrayList<>();
+        if (job.getFailures() != null) {
+            failures = job.getFailures().stream()
+                    .map(f -> new ServerRegistrationFailures(f.getHost(), f.getError()))
+                    .toList();
+        }
 
-        return BulkRegisterJobResponse.builder()
+        List<RegisterServerResponse> successes = new ArrayList<>();
+        if (job.getSuccessfulServers() != null) {
+            successes = job.getSuccessfulServers().stream()
+                    .map(server -> new RegisterServerResponse(
+                            server.getId(),
+                            server.getHost(),
+                            server.getModel(),
+                            job.getId() // Link the job ID
+                    ))
+                    .toList();
+        }
+
+        return ServerRegistrationJobStatusResponse.builder()
                 .jobId(job.getId())
                 .status(job.getStatus())
                 .total(job.getTotal())
@@ -110,7 +102,26 @@ public class ServerService {
                 .startedAt(job.getStartedAt())
                 .finishedAt(job.getFinishedAt())
                 .failures(failures)
+                .successfulServers(successes)
                 .build();
+    }
+
+    public Long startSingleRegisterJob(RegisterServerRequest request) {
+        ServerRegistrationJobs job = ServerRegistrationJobs.builder()
+                .startedAt(Instant.now())
+                .status("RUNNING") // or "PENDING"
+                .total(1)          // Hardcoded to 1 for a single request
+                .successCount(0)
+                .failureCount(0)
+                .build();
+
+        job = jobRepository.save(job);
+
+        // 2. Pass the job and request to the @Async service
+        serverRegisterAsyncService.processSingleAsync(job, request);
+
+        // 3. Return the ID immediately
+        return job.getId();
     }
 
 }

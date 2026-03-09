@@ -8,7 +8,7 @@ import java.util.List;
 
 @Data
 @Builder
-public class BulkRegisterJobResponse {
+public class ServerRegistrationJobStatusResponse {
 
     private Long jobId;
     private String status;
@@ -17,6 +17,6 @@ public class BulkRegisterJobResponse {
     private int failureCount;
     private Instant startedAt;
     private Instant finishedAt;
-    private List<BulkRegisterFailure> failures;
-
+    private List<ServerRegistrationFailures> failures;
+    private List<RegisterServerResponse> successfulServers;
 }

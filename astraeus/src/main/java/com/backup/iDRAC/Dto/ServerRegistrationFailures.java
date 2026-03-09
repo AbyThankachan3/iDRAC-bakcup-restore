@@ -5,7 +5,7 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class BulkRegisterFailure {
+public class ServerRegistrationFailures {
     private String host;
     private String error;
 }

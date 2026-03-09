@@ -4,19 +4,19 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "bulk_register_failures")
+@Table(name = "server_register_failures")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class BulkRegisterFailureLog {
+public class ServerRegFailureLogs {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @ManyToOne
     @JoinColumn(name = "job_id", nullable = false)
-    private BulkRegisterJob job;
+    private ServerRegistrationJobs job;
     private String host;
     private String error;
 }
