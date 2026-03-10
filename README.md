@@ -55,6 +55,8 @@ cp idrac-backup-restore-helm-chart/secret-examples/vault-secret.yaml ./vault-sec
 
 Edit `postgres-secret.yaml` with your database credentials and `vault-secret.yaml` with your Vault root token.
 
+Edit `namespace` field in both secret file.
+
 ### 2. Seal the secrets
 
 ```bash

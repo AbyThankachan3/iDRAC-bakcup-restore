@@ -9,6 +9,7 @@ import com.idrac.backup.api.RedfishClient;
 import com.idrac.backup.client.RedfishClientBuilder;
 import com.idrac.backup.config.RedfishConnection;
 import com.idrac.backup.model.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
+@Slf4j
 @Service
 public class BackupAsyncService {
     @Autowired
@@ -43,7 +45,7 @@ public class BackupAsyncService {
 
             long start = System.currentTimeMillis();
 
-            BackupHostLog log = backupHostLogRepository.save(
+            BackupHostLog backupHostLog = backupHostLogRepository.save(
                     BackupHostLog.builder()
                             .backupJob(job)
                             .host(server.getHost())
@@ -54,23 +56,23 @@ public class BackupAsyncService {
 
             try {
 
-                String filePath = backupSingleServer(server, log);
+                String filePath = backupSingleServer(server, backupHostLog);
 
-                log.setStatus("COMPLETED");
-                log.setFilePath(filePath);
-                log.setDurationMillis(System.currentTimeMillis() - start);
+                backupHostLog.setStatus("COMPLETED");
+                backupHostLog.setFilePath(filePath);
+                backupHostLog.setDurationMillis(System.currentTimeMillis() - start);
 
-                backupHostLogRepository.save(log);
+                backupHostLogRepository.save(backupHostLog);
 
                 success++;
 
             } catch (Exception e) {
 
-                log.setStatus("FAILED");
-                log.setErrorMessage(e.getMessage());
-                log.setDurationMillis(System.currentTimeMillis() - start);
+                backupHostLog.setStatus("FAILED");
+                backupHostLog.setErrorMessage(e.getMessage());
+                backupHostLog.setDurationMillis(System.currentTimeMillis() - start);
 
-                backupHostLogRepository.save(log);
+                backupHostLogRepository.save(backupHostLog);
 
                 failure++;
             }
@@ -85,12 +87,12 @@ public class BackupAsyncService {
     }
 
     @Async
-    public void resumePolling(BackupHostLog log) {
+    public void resumePolling(BackupHostLog hostLog) {
         long start = System.currentTimeMillis();
         try {
             IdracServer server = idracServerRepository
-                    .findByHost(log.getHost())
-                    .orElseThrow(() -> new HostNotFoundException(log.getHost()));
+                    .findByHost(hostLog.getHost())
+                    .orElseThrow(() -> new HostNotFoundException(hostLog.getHost()));
 
             Credentials creds = vaultService.getCredentials(server.getVaultPath());
             RedfishConnection connection = RedfishConnection.builder()
@@ -101,25 +103,49 @@ public class BackupAsyncService {
             RedfishClient client = RedfishClientBuilder.build(connection);
 
             // Resume polling the existing redfish job — don't trigger a new one
-            client.pollJob(log.getRedfishJobId(), 300, job -> updateBackupProgress(job, log));
+            client.pollJob(hostLog.getRedfishJobId(), 300, job -> updateBackupProgress(job, hostLog));
 
-            String scp = client.fetchScp(log.getRedfishJobId(), ExportFormat.XML);
-            String filePath = saveBackupToDisk(log.getHost(), scp);
+            try {
+                String scp = client.fetchScp(hostLog.getRedfishJobId(), ExportFormat.XML);
+                String filePath = saveBackupToDisk(hostLog.getHost(), scp);
 
-            log.setStatus(BackupJobStatus.COMPLETED.name());
-            log.setFilePath(filePath);
-            log.setDurationMillis(System.currentTimeMillis() - start);
-            backupHostLogRepository.save(log);
+                hostLog.setStatus(BackupJobStatus.COMPLETED.name());
+                hostLog.setFilePath(filePath);
+                hostLog.setDurationMillis(System.currentTimeMillis() - start);
+                backupHostLogRepository.save(hostLog);
+            } catch (Exception e) {
+                JobResponse job = client.getJob(hostLog.getRedfishJobId());
+                String actualState = job.getJobState();
+
+                if ("Completed".equalsIgnoreCase(actualState)) {
+                    log.warn("SCP expired for job {}", hostLog.getRedfishJobId());
+                    hostLog.setStatus(BackupJobStatus.COMPLETED.name());
+                    hostLog.setErrorMessage("SCP/File expired on iDRAC before retrieval. " +
+                            "Check iDRAC Lifecycle Controller logs for details.");
+                    hostLog.setDurationMillis(System.currentTimeMillis() - start);
+                    hostLog.setFilePath(null);
+                    backupHostLogRepository.save(hostLog);
+
+                } else if ("Failed".equalsIgnoreCase(actualState)
+                        || "Exception".equalsIgnoreCase(actualState)) {
+                    hostLog.setStatus(BackupJobStatus.FAILED.name());
+                    hostLog.setErrorMessage("Confirmed failed on iDRAC: " + actualState);
+                    hostLog.setDurationMillis(System.currentTimeMillis() - start);
+                    hostLog.setFilePath(null);
+                    backupHostLogRepository.save(hostLog);
+
+                }
+            }
 
             // Update parent job counts
-            updateParentJob(log.getBackupJob());
+            updateParentJob(hostLog.getBackupJob());
 
         } catch (Exception e) {
-            log.setStatus(BackupJobStatus.FAILED.name());
-            log.setErrorMessage("Recovered after crash: " + e.getMessage());
-            log.setDurationMillis(System.currentTimeMillis() - start);
-            backupHostLogRepository.save(log);
-            updateParentJob(log.getBackupJob());
+            hostLog.setStatus(BackupJobStatus.FAILED.name());
+            hostLog.setErrorMessage("Recovered after crash: " + e.getMessage());
+            hostLog.setDurationMillis(System.currentTimeMillis() - start);
+            backupHostLogRepository.save(hostLog);
+            updateParentJob(hostLog.getBackupJob());
         }
     }
 
@@ -141,7 +167,7 @@ public class BackupAsyncService {
         }
     }
 
-    private String backupSingleServer(IdracServer server, BackupHostLog log) throws Exception {
+    private String backupSingleServer(IdracServer server, BackupHostLog backupHostLog) throws Exception {
 
         Credentials creds = vaultService.getCredentials(server.getVaultPath());
 
@@ -161,41 +187,41 @@ public class BackupAsyncService {
                 IncludeInExport.INCLUDE_PASSWORD_HASH_VALUES
         );
 
-        log.setRedfishJobId(jobId);
-        log.setStatus(BackupJobStatus.RUNNING.name());
-        log.setPercent(0);
-        backupHostLogRepository.save(log);
+        backupHostLog.setRedfishJobId(jobId);
+        backupHostLog.setStatus(BackupJobStatus.RUNNING.name());
+        backupHostLog.setPercent(0);
+        backupHostLogRepository.save(backupHostLog);
 
-        client.pollJob(jobId, 300, job -> updateBackupProgress(job, log));
+        client.pollJob(jobId, 300, job -> updateBackupProgress(job, backupHostLog));
 
         String scp = client.fetchScp(jobId, ExportFormat.XML);
 
         return saveBackupToDisk(server.getHost(), scp);
     }
 
-    private void updateBackupProgress(JobResponse job, BackupHostLog log) {
+    private void updateBackupProgress(JobResponse job, BackupHostLog backupHostLog) {
 
         boolean changed = false;
 
         String newState = job.getJobState();
 
-        if (newState != null && !newState.equalsIgnoreCase(log.getStatus())) {
+        if (newState != null && !newState.equalsIgnoreCase(backupHostLog.getStatus())) {
 
-            log.setStatus(newState);
+            backupHostLog.setStatus(newState);
             changed = true;
         }
 
         Integer newPercent = job.getPercentComplete();
 
         if (newPercent != null &&
-                (log.getPercent() == null || !newPercent.equals(log.getPercent()))) {
+                (backupHostLog.getPercent() == null || !newPercent.equals(backupHostLog.getPercent()))) {
 
-            log.setPercent(newPercent);
+            backupHostLog.setPercent(newPercent);
             changed = true;
         }
 
         if (changed) {
-            backupHostLogRepository.save(log);
+            backupHostLogRepository.save(backupHostLog);
         }
     }
 

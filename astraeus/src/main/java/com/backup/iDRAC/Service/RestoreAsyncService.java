@@ -22,6 +22,8 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class RestoreAsyncService {
@@ -95,8 +97,36 @@ public class RestoreAsyncService {
                     creds.getUsername(),
                     creds.getPassword());
 
-            RestoreTaskResult result = client.fetchTaskResult(log.getRedfishJobId());
-            updateRestoreResult(log, result);
+            try {
+                RestoreTaskResult result = client.fetchTaskResult(log.getRedfishJobId());
+                updateRestoreResult(log, result);
+
+            } catch (Exception fetchException) {
+                // fetchTaskResult failed — task may have expired on iDRAC
+                JobResponse job = client.getJob(log.getRedfishJobId());
+                String actualState = job.getJobState();
+
+                if ("Completed".equalsIgnoreCase(actualState)
+                        || "CompletedWithErrors".equalsIgnoreCase(actualState)) {
+                    // Job completed on iDRAC — task details just expired
+                    // Mark as completed but flag that diagnostics are unavailable
+                    if ("Completed".equalsIgnoreCase(actualState)) {
+                        log.setStatus(RestoreJobStatus.COMPLETED.name());
+                    } else if ("CompletedWithErrors".equalsIgnoreCase(actualState)) {
+                        log.setStatus(RestoreJobStatus.COMPLETED_WITH_ERRORS.name());
+                    }
+                    log.setCompletedAt(LocalDateTime.now());
+                    log.setWarnings(buildExpiredTaskWarning());
+                    restoreLogRepository.save(log);
+
+                } else if ("Failed".equalsIgnoreCase(actualState)
+                        || "Exception".equalsIgnoreCase(actualState)) {
+                    // Confirmed failed on iDRAC
+                    log.setStatus(RestoreJobStatus.FAILED.name());
+                    log.setCompletedAt(LocalDateTime.now());
+                    restoreLogRepository.save(log);
+                }
+            }
 
         } catch (Exception e) {
             log.setStatus(RestoreJobStatus.FAILED.name());
@@ -181,5 +211,18 @@ public class RestoreAsyncService {
                         .build();
 
         return RestoreRedfishClientBuilder.build(connection);
+    }
+
+    private JsonNode buildExpiredTaskWarning() {
+        ObjectMapper mapper = new ObjectMapper();
+        return mapper.valueToTree(List.of(
+                Map.of(
+                        "message", "Task details expired on iDRAC before they could be retrieved. " +
+                                "Job completed successfully. " +
+                                "Check iDRAC Lifecycle Controller logs for detailed results.",
+                        "severity", "Warning",
+                        "messageId", "INTERNAL_TASK_EXPIRED"
+                )
+        ));
     }
 }
