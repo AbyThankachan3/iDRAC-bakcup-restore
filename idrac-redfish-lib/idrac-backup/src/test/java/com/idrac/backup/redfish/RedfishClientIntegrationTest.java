@@ -76,11 +76,4 @@ public class RedfishClientIntegrationTest {
         System.out.println(client.getSystemModel());
     }
 
-    @Test
-    public void testCleanupJobs() {
-        RedfishClient client = createClient();
-        client.cleanupStuckJobs();
-        System.out.println("[+] Cleanup completed");
-
-    }
 }

@@ -16,4 +16,5 @@ public interface BackupHostLogRepository extends JpaRepository<BackupHostLog, Lo
     List<BackupHostLog> findByHostAndStatusAndCreatedAtAfter(String host, String status, Instant from);
     List<BackupHostLog> findByHostAndStatusAndCreatedAtBefore(String host, String status, Instant to);
     Optional<BackupHostLog> findFirstByBackupJobIdOrderByCreatedAtDesc(Long backupId);
+    List<BackupHostLog> findByStatus(String status);
 }

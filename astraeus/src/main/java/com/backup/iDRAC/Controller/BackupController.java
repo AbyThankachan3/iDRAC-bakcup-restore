@@ -50,7 +50,6 @@ public class BackupController {
                 .build();
     }
 
-
     @Operation(summary = "Get all the created jobs",
             description = "Get all the created jobs.")
     @GetMapping("/jobs")

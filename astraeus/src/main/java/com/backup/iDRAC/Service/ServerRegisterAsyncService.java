@@ -98,11 +98,6 @@ public class ServerRegisterAsyncService {
             job.setSuccessCount(1);
             job.setStatus("COMPLETED");
 
-            // IMPORTANT: If you added the job_id column to idrac_servers as discussed,
-            // you should link it here!
-            // server.setJobId(job.getId());
-            // idracServerRepository.save(server);
-
         } catch (Exception ex) {
             job.setFailureCount(1);
             job.setStatus("FAILED");

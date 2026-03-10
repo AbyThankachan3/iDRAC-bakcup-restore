@@ -1,6 +1,7 @@
 package com.backup.iDRAC.Service;
 
 import com.backup.iDRAC.Entity.*;
+import com.backup.iDRAC.Exception.HostNotFoundException;
 import com.backup.iDRAC.Repostiory.BackupHostLogRepository;
 import com.backup.iDRAC.Repostiory.BackupJobRepository;
 import com.backup.iDRAC.Repostiory.IdracServerRepository;
@@ -19,6 +20,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 @Service
 public class BackupAsyncService {
@@ -30,7 +33,6 @@ public class BackupAsyncService {
     private BackupHostLogRepository backupHostLogRepository;
     @Autowired
     private VaultService vaultService;
-
     @Async
     public void startBackupAsync(BackupJob job, List<IdracServer> servers) {
 
@@ -82,6 +84,63 @@ public class BackupAsyncService {
         backupJobRepository.save(job);
     }
 
+    @Async
+    public void resumePolling(BackupHostLog log) {
+        long start = System.currentTimeMillis();
+        try {
+            IdracServer server = idracServerRepository
+                    .findByHost(log.getHost())
+                    .orElseThrow(() -> new HostNotFoundException(log.getHost()));
+
+            Credentials creds = vaultService.getCredentials(server.getVaultPath());
+            RedfishConnection connection = RedfishConnection.builder()
+                    .host(server.getHost())
+                    .username(creds.getUsername())
+                    .password(creds.getPassword())
+                    .build();
+            RedfishClient client = RedfishClientBuilder.build(connection);
+
+            // Resume polling the existing redfish job — don't trigger a new one
+            client.pollJob(log.getRedfishJobId(), 300, job -> updateBackupProgress(job, log));
+
+            String scp = client.fetchScp(log.getRedfishJobId(), ExportFormat.XML);
+            String filePath = saveBackupToDisk(log.getHost(), scp);
+
+            log.setStatus(BackupJobStatus.COMPLETED.name());
+            log.setFilePath(filePath);
+            log.setDurationMillis(System.currentTimeMillis() - start);
+            backupHostLogRepository.save(log);
+
+            // Update parent job counts
+            updateParentJob(log.getBackupJob());
+
+        } catch (Exception e) {
+            log.setStatus(BackupJobStatus.FAILED.name());
+            log.setErrorMessage("Recovered after crash: " + e.getMessage());
+            log.setDurationMillis(System.currentTimeMillis() - start);
+            backupHostLogRepository.save(log);
+            updateParentJob(log.getBackupJob());
+        }
+    }
+
+    private void updateParentJob(BackupJob job) {
+        List<BackupHostLog> allLogs = backupHostLogRepository.findByBackupJobId(job.getId());
+        boolean anyRunning = allLogs.stream()
+                .anyMatch(l -> l.getStatus().equalsIgnoreCase(BackupJobStatus.RUNNING.name()));
+        if (!anyRunning) {
+            long failures = allLogs.stream()
+                    .filter(l -> l.getStatus().equalsIgnoreCase(BackupJobStatus.FAILED.name()))
+                    .count();
+            job.setFinishedAt(Instant.now());
+            job.setSuccessCount((int) allLogs.stream()
+                    .filter(l -> l.getStatus().equalsIgnoreCase(BackupJobStatus.COMPLETED.name()))
+                    .count());
+            job.setFailureCount((int) failures);
+            job.setStatus(failures > 0 ? BackupJobStatus.FAILED : BackupJobStatus.COMPLETED);
+            backupJobRepository.save(job);
+        }
+    }
+
     private String backupSingleServer(IdracServer server, BackupHostLog log) throws Exception {
 
         Credentials creds = vaultService.getCredentials(server.getVaultPath());
@@ -103,7 +162,7 @@ public class BackupAsyncService {
         );
 
         log.setRedfishJobId(jobId);
-        log.setStatus("RUNNING");
+        log.setStatus(BackupJobStatus.RUNNING.name());
         log.setPercent(0);
         backupHostLogRepository.save(log);
 
@@ -144,8 +203,7 @@ public class BackupAsyncService {
     private String saveBackupToDisk(String host, String content) throws Exception {
 
         String baseDir = System.getenv().getOrDefault("BACKUP_DIR", "/data/idrac-backups/");
-        String timestamp = LocalDateTime.now()
-                .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         Path dir = Path.of(baseDir, host);
         Files.createDirectories(dir);
         Path file = dir.resolve("idrac_" + timestamp + ".xml");

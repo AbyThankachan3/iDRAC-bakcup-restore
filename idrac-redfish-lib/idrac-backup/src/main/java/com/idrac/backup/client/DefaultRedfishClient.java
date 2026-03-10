@@ -175,11 +175,6 @@ public class DefaultRedfishClient implements RedfishClient {
     }
 
     @Override
-    public void cleanupStuckJobs() {
-        throw new UnsupportedOperationException("Not implemented yet");
-    }
-
-    @Override
     public String getSystemModel() {
         try {
             Response response = feignApi.getSystem();

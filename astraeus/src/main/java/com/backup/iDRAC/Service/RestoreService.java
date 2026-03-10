@@ -36,7 +36,7 @@ public class RestoreService {
         RestoreLog log = RestoreLog.builder()
                 .backupJobId(backupId)
                 .initialHost(host)
-                .status("CREATED")
+                .status(RestoreJobStatus.CREATED.getValue())
                 .percent(0)
                 .startedAt(LocalDateTime.now())
                 .build();

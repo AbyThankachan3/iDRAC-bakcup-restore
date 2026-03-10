@@ -140,13 +140,13 @@ public class BackupService {
             if (from.isAfter(to)) {
                 throw new IllegalArgumentException("From date must be before To date");
             }
-            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBetween(host, "COMPLETED", from, to);
+            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBetween(host, BackupJobStatus.COMPLETED.name(), from, to);
         } else if (from != null) {
-            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtAfter(host, "COMPLETED", from);
+            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtAfter(host, BackupJobStatus.COMPLETED.name(), from);
         } else if (to != null) {
-            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBefore(host, "COMPLETED", to);
+            logs = backupHostLogRepository.findByHostAndStatusAndCreatedAtBefore(host, BackupJobStatus.COMPLETED.name(), to);
         } else {
-            logs = backupHostLogRepository.findByHostAndStatus(host, "COMPLETED");
+            logs = backupHostLogRepository.findByHostAndStatus(host, BackupJobStatus.COMPLETED.name());
         }
         if (logs.isEmpty()) {
             return HostSuccessBackupResponse.builder().host(host).successCount(0).backups(List.of()).build();
@@ -172,7 +172,7 @@ public class BackupService {
             throw new HostNotFoundException(host);
         }
 
-        Optional<BackupHostLog> logOptional = backupHostLogRepository.findTopByHostAndStatusOrderByIdDesc(host, "COMPLETED");
+        Optional<BackupHostLog> logOptional = backupHostLogRepository.findTopByHostAndStatusOrderByIdDesc(host, BackupJobStatus.COMPLETED.name());
 
         if (logOptional.isEmpty()) {
             return HostBackupResponse.builder().host(host).fileName(null).durationMillis(null).createdAt(null).build();
@@ -196,7 +196,7 @@ public class BackupService {
         }
         List<IdracServer> servers = idracServerRepository.findByModel(model);
         List<String> hosts = servers.stream().map(IdracServer::getHost).toList();
-        List<BackupHostLog> logs = backupHostLogRepository.findByHostInAndStatus(hosts, "COMPLETED");
+        List<BackupHostLog> logs = backupHostLogRepository.findByHostInAndStatus(hosts, BackupJobStatus.COMPLETED.name());
         if (logs.isEmpty()) {
             return ModelSuccessBackupResponse.empty(model, servers.size());
         }
@@ -214,7 +214,7 @@ public class BackupService {
                 .findById(logId)
                 .orElseThrow(() -> new RuntimeException("Backup log not found"));
 
-        if (!log.getStatus().equalsIgnoreCase("COMPLETED")) {
+        if (!log.getStatus().equalsIgnoreCase(BackupJobStatus.COMPLETED.name())) {
             throw new RuntimeException("Backup not successful. File not available.");
         }
 

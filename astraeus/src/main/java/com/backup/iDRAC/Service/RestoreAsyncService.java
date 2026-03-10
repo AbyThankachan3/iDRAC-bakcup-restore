@@ -1,9 +1,6 @@
 package com.backup.iDRAC.Service;
 
-import com.backup.iDRAC.Entity.BackupHostLog;
-import com.backup.iDRAC.Entity.Credentials;
-import com.backup.iDRAC.Entity.IdracServer;
-import com.backup.iDRAC.Entity.RestoreLog;
+import com.backup.iDRAC.Entity.*;
 import com.backup.iDRAC.Exception.HostNotFoundException;
 import com.backup.iDRAC.Exception.RestoreFailedException;
 import com.backup.iDRAC.Repostiory.BackupHostLogRepository;
@@ -30,10 +27,6 @@ import java.time.LocalDateTime;
 public class RestoreAsyncService {
 
     @Autowired
-    private BackupJobRepository backupJobRepository;
-    @Autowired
-    private BackupHostLogRepository backupHostLogRepository;
-    @Autowired
     private IdracServerRepository idracServerRepository;
     @Autowired
     private VaultService vaultService;
@@ -59,12 +52,10 @@ public class RestoreAsyncService {
             log.setRebootRequired(plan.isRebootRequired());
             log.setFinalHost(plan.getTargetHost());
             restoreLogRepository.save(log);
-//            JobResponse preview = client.preview(xml);
-//            client.pollJob(preview.getId(), 300, job -> updateRestoreLog(job, log));
             JobResponse importJob = client.importConfig(xml);
 
             log.setRedfishJobId(importJob.getId());
-            log.setStatus("IMPORT_RUNNING");
+            log.setStatus(RestoreJobStatus.RUNNING.name());
 
             restoreLogRepository.save(log);
 
@@ -75,9 +66,41 @@ public class RestoreAsyncService {
 
             RestoreLog log = restoreLogRepository.findById(restoreId).orElseThrow();
 
-            log.setStatus("FAILED");
+            log.setStatus(RestoreJobStatus.FAILED.name());
             log.setCompletedAt(LocalDateTime.now());
 
+            restoreLogRepository.save(log);
+        }
+    }
+
+    @Async
+    public void resumeRestorePolling(RestoreLog log) {
+        try {
+            IdracServer server = idracServerRepository
+                    .findByHost(log.getInitialHost())
+                    .orElseThrow(() -> new HostNotFoundException(log.getInitialHost()));
+
+            Credentials creds = vaultService.getCredentials(server.getVaultPath());
+
+            RestorePlan plan = RestorePlan.builder()
+                    .currentHost(log.getInitialHost())
+                    .targetHost(log.getFinalHost())
+                    .rebootRequired(log.getRebootRequired() != null && log.getRebootRequired())
+                    .build();
+
+            pollWithHostSwitch(log.getRedfishJobId(), plan, creds.getUsername(), creds.getPassword(), log);
+
+            RestoreClient client = createClient(
+                    log.getFinalHost() != null ? log.getFinalHost() : log.getInitialHost(),
+                    creds.getUsername(),
+                    creds.getPassword());
+
+            RestoreTaskResult result = client.fetchTaskResult(log.getRedfishJobId());
+            updateRestoreResult(log, result);
+
+        } catch (Exception e) {
+            log.setStatus(RestoreJobStatus.FAILED.name());
+            log.setCompletedAt(LocalDateTime.now());
             restoreLogRepository.save(log);
         }
     }
@@ -125,9 +148,9 @@ public class RestoreAsyncService {
             changed = true;
         }
         if (changed) {
-            if ("Completed".equalsIgnoreCase(job.getJobState())
-                    || "CompletedWithErrors".equalsIgnoreCase(job.getJobState())
-                    || "Failed".equalsIgnoreCase(job.getJobState())) {
+            if (RestoreJobStatus.COMPLETED.getValue().equalsIgnoreCase(job.getJobState())
+                    || RestoreJobStatus.COMPLETED_WITH_ERRORS.getValue().equalsIgnoreCase(job.getJobState())
+                    || RestoreJobStatus.FAILED.getValue().equalsIgnoreCase(job.getJobState())) {
                 log.setCompletedAt(LocalDateTime.now());
             }
             restoreLogRepository.save(log);

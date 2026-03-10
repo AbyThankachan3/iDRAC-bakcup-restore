@@ -7,7 +7,6 @@ public interface RedfishClient {
     String triggerExport(ExportTarget target, ExportFormat exportFormat, ExportUse exportUse, IncludeInExport... includes);
     void pollJob(String jobId, long timeoutMillis) throws InterruptedException;
     String fetchScp(String jobId, ExportFormat exportFormat);
-    void cleanupStuckJobs();
     String getSystemModel();
     void pollJob(String jobId, int timeoutSeconds, JobProgressListener listener) throws InterruptedException;
     JobResponse getJob(String jobId);
